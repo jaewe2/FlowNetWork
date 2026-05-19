@@ -83,6 +83,9 @@ public class Main {
             System.out.print("Max packet priority: ");
             int maxPriority = kb.nextInt();
 
+            System.out.print("Number of trials (e.g. 20): ");
+            int customTrials = Math.max(1, kb.nextInt());
+
             System.out.println("\nChoose algorithms to run for custom test:");
             System.out.println("  1 — Algorithm 1 (paper max-flow / size order)");
             System.out.println("  2 — Algorithm 2 (paper approximation / all-or-nothing)");
@@ -107,7 +110,8 @@ public class Main {
                 maxStorage,
                 energy,
                 minPriority,
-                maxPriority);
+                maxPriority,
+                customTrials);
             kb.close();
             return;
         }

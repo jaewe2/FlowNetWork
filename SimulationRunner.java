@@ -302,16 +302,26 @@ public class SimulationRunner {
             System.out.printf("%n==== Network Size: %d nodes, %d trials ====%n",
                               numNodes, trials);
 
-            double sumGOA = 0, sumDensity = 0,
-                   sumHybrid = 0, sumDDR = 0, sumDDRP = 0, sumPSB = 0, sumExact = 0;
-            int goaTrials = 0, densityTrials = 0, hybridTrials = 0,
-                ddrTrials = 0, ddrpTrials = 0, psbTrials = 0;
+            // Per-trial result lists for CI computation
+            List<Double> goaResults     = new ArrayList<>();
+            List<Double> densityResults = new ArrayList<>();
+            List<Double> hybridResults  = new ArrayList<>();
+            List<Double> ddrResults     = new ArrayList<>();
+            List<Double> ddrpResults    = new ArrayList<>();
+            List<Double> psbResults     = new ArrayList<>();
+            List<Double> exactResults   = new ArrayList<>();
+
             int densityBeatGOA = 0, goaBeatDensity = 0, tied = 0;
             int ddrpBeatDDR = 0, ddrBeatDDRP = 0, ddrpTied = 0;
-            int exactTrials = 0, activeTrials = 0, violations = 0;
+            int activeTrials = 0, violations = 0;
             boolean anyFallback = false;
 
             for (int t = 1; t <= trials; t++) {
+                // Delay between trials to avoid resource contention
+                if (t > 1) {
+                    try { Thread.sleep(5000); } catch (InterruptedException ignored) {}
+                }
+
                 SensorStuff net = new SensorStuff(numNodes, choice);
                 int trialTR = net.buildConnectedGraph(
                     numNodes, widthX, lenY, TR, rand, true);
@@ -361,43 +371,43 @@ public class SimulationRunner {
                 if (use(ALG_GOA)) {
                     goaResult = new GOA(newFN(net), TraceLogger.SILENT)
                         .runSilent(dgNodes, storageNodes, storageCap, adjGraph);
-                    sumGOA += goaResult; goaTrials++;
+                    goaResults.add(goaResult);
                 }
 
                 if (use(ALG_DENSITY)) {
                     densityResult = new DensityGOA(newFN(net), TraceLogger.SILENT)
                         .runSilent(dgNodes, storageNodes, storageCap, adjGraph);
-                    sumDensity += densityResult; densityTrials++;
+                    densityResults.add(densityResult);
                 }
 
                 if (use(ALG_HYBRID)) {
                     hybridResult = new HybridGOA(newFN(net), TraceLogger.SILENT)
                         .runSilent(dgNodes, storageNodes, storageCap, adjGraph);
-                    sumHybrid += hybridResult; hybridTrials++;
+                    hybridResults.add(hybridResult);
                 }
 
                 if (use(ALG_DDR)) {
                     ddrResult = new DDRGOA(newFN(net), TraceLogger.SILENT)
                         .runSilent(dgNodes, storageNodes, storageCap, adjGraph);
-                    sumDDR += ddrResult; ddrTrials++;
+                    ddrResults.add(ddrResult);
                 }
 
                 if (use(ALG_DDRPLUS)) {
                     ddrpResult = new DDRPlusGOA(newFN(net), TraceLogger.SILENT)
                         .runSilent(dgNodes, storageNodes, storageCap, adjGraph);
-                    sumDDRP += ddrpResult; ddrpTrials++;
+                    ddrpResults.add(ddrpResult);
                 }
 
                 if (use(ALG_PSB)) {
                     psbResult = new PSBGOA(newFN(net), TraceLogger.SILENT)
                         .runSilent(dgNodes, storageNodes, storageCap, adjGraph);
-                    sumPSB += psbResult; psbTrials++;
+                    psbResults.add(psbResult);
                 }
 
                 if (use(ALG_EXACT)) {
                     exactResult = new ExactSolverNew(newFN(net))
                         .runSilent(dgNodes, storageNodes, storageCap, adjGraph);
-                    if (exactResult >= 0) { sumExact += exactResult; exactTrials++; }
+                    if (exactResult >= 0) { exactResults.add(exactResult); }
                 }
 
                 boolean exactRan   = exactResult != null && exactResult >= 0;
@@ -439,38 +449,38 @@ public class SimulationRunner {
             // use activeTrials as denominator for averages and win/loss counts
             System.out.printf("%n-- Results over %d active trials (%d skipped, %d total) --%n",
                               activeTrials, trials - activeTrials, trials);
-            double avgExact = exactTrials > 0 ? sumExact / exactTrials : -1;
+            double avgExact = !exactResults.isEmpty() ? mean(exactResults) : -1;
             if (use(ALG_EXACT))
-                System.out.printf("  Java B&B baseline avg:       %.2f  (%d/%d active trials)%n",
-                                  avgExact >= 0 ? avgExact : 0, exactTrials, activeTrials);
+                System.out.printf("  Java B&B baseline:    %s%n",
+                                  !exactResults.isEmpty() ? fmtCI(exactResults) : "N/A");
             else
-                System.out.println("  Java B&B baseline avg:       N/A (option 7 not selected)");
+                System.out.println("  Java B&B baseline:    N/A (option 7 not selected)");
 
-            if (goaTrials > 0)
-                System.out.printf("  GOA avg:              %.2f%s%n",
-                    sumGOA/goaTrials, gap(sumGOA/goaTrials, avgExact));
-            if (densityTrials > 0)
-                System.out.printf("  Density GOA avg:      %.2f%s%n",
-                    sumDensity/densityTrials, gap(sumDensity/densityTrials, avgExact));
-            if (hybridTrials > 0)
-                System.out.printf("  Hybrid GOA avg:       %.2f%s%n",
-                    sumHybrid/hybridTrials, gap(sumHybrid/hybridTrials, avgExact));
-            if (ddrTrials > 0)
-                System.out.printf("  DDR-GOA avg:          %.2f%s%n",
-                    sumDDR/ddrTrials, gap(sumDDR/ddrTrials, avgExact));
-            if (ddrpTrials > 0)
-                System.out.printf("  DDR+-GOA avg:         %.2f%s%n",
-                    sumDDRP/ddrpTrials, gap(sumDDRP/ddrpTrials, avgExact));
-            if (psbTrials > 0)
-                System.out.printf("  PSB-GOA avg:          %.2f%s%n",
-                    sumPSB/psbTrials, gap(sumPSB/psbTrials, avgExact));
+            if (!goaResults.isEmpty())
+                System.out.printf("  GOA:                  %s%s%n",
+                    fmtCI(goaResults), gap(mean(goaResults), avgExact));
+            if (!densityResults.isEmpty())
+                System.out.printf("  Density GOA:          %s%s%n",
+                    fmtCI(densityResults), gap(mean(densityResults), avgExact));
+            if (!hybridResults.isEmpty())
+                System.out.printf("  Hybrid GOA:           %s%s%n",
+                    fmtCI(hybridResults), gap(mean(hybridResults), avgExact));
+            if (!ddrResults.isEmpty())
+                System.out.printf("  DDR-GOA:              %s%s%n",
+                    fmtCI(ddrResults), gap(mean(ddrResults), avgExact));
+            if (!ddrpResults.isEmpty())
+                System.out.printf("  DDR+-GOA:             %s%s%n",
+                    fmtCI(ddrpResults), gap(mean(ddrpResults), avgExact));
+            if (!psbResults.isEmpty())
+                System.out.printf("  PSB-GOA:              %s%s%n",
+                    fmtCI(psbResults), gap(mean(psbResults), avgExact));
 
-            if (goaTrials > 0 && densityTrials > 0) {
+            if (!goaResults.isEmpty() && !densityResults.isEmpty()) {
                 System.out.printf("  Density beat GOA:     %d/%d active trials%n", densityBeatGOA, activeTrials);
                 System.out.printf("  GOA beat Density:     %d/%d active trials%n", goaBeatDensity, activeTrials);
                 System.out.printf("  Tied:                 %d/%d active trials%n", tied, activeTrials);
             }
-            if (ddrTrials > 0 && ddrpTrials > 0) {
+            if (!ddrResults.isEmpty() && !ddrpResults.isEmpty()) {
                 System.out.printf("  DDR+ beat DDR:        %d/%d active trials%n", ddrpBeatDDR, activeTrials);
                 System.out.printf("  DDR beat DDR+:        %d/%d active trials%n", ddrBeatDDRP, activeTrials);
                 System.out.printf("  DDR+/DDR tied:        %d/%d active trials%n", ddrpTied, activeTrials);
@@ -480,6 +490,76 @@ public class SimulationRunner {
             if (anyFallback)
                 System.out.printf("  [*] Hybrid/PSB marked with * fell back to DensityGOA " +
                                   "(k > MAX_HYBRID_DGS=%d)%n", HybridGOA.MAX_HYBRID_DGS);
+
+            // ── Write CSV row for this network size (for plotting with error bars) ──
+            appendCSV(numNodes, "GOA",         goaResults);
+            appendCSV(numNodes, "DensityGOA",  densityResults);
+            appendCSV(numNodes, "HybridGOA",   hybridResults);
+            appendCSV(numNodes, "DDR-GOA",     ddrResults);
+            appendCSV(numNodes, "DDR+-GOA",    ddrpResults);
+            appendCSV(numNodes, "PSB-GOA",     psbResults);
+            appendCSV(numNodes, "Exact",       exactResults);
+        }
+        System.out.println("\n  CSV data written to: scaling_results_ci.csv");
+        System.out.println("  Use this file to plot error bars in Excel or Python.");
+    }
+
+    // ── Confidence Interval Helpers ──────────────────────────────────────────
+
+    /** Compute the mean of a list of values. */
+    private static double mean(List<Double> vals) {
+        double sum = 0;
+        for (double v : vals) sum += v;
+        return vals.isEmpty() ? 0 : sum / vals.size();
+    }
+
+    /** Compute the sample standard deviation of a list of values. */
+    private static double stdev(List<Double> vals) {
+        if (vals.size() < 2) return 0;
+        double avg = mean(vals);
+        double sumSq = 0;
+        for (double v : vals) sumSq += (v - avg) * (v - avg);
+        return Math.sqrt(sumSq / (vals.size() - 1));
+    }
+
+    /**
+     * Compute the 95% confidence interval half-width.
+     * This mirrors Excel's CONFIDENCE(alpha, stdev, n) function:
+     *   CI = z_{alpha/2} * stdev / sqrt(n)
+     * For alpha=0.05 (95% CI), z = 1.96.
+     */
+    private static double confidenceInterval95(List<Double> vals) {
+        if (vals.size() < 2) return 0;
+        double sd = stdev(vals);
+        return 1.96 * sd / Math.sqrt(vals.size());
+    }
+
+    /** Format mean ± CI for console output. */
+    private static String fmtCI(List<Double> vals) {
+        if (vals.isEmpty()) return "N/A";
+        double avg = mean(vals);
+        double ci  = confidenceInterval95(vals);
+        return String.format("%.2f ± %.2f  (95%% CI: [%.2f, %.2f], n=%d)",
+                             avg, ci, avg - ci, avg + ci, vals.size());
+    }
+
+    /** CSV file for plotting: written once with header, then appended per network size. */
+    private static boolean csvHeaderWritten = false;
+
+    private static void appendCSV(int numNodes, String algorithm, List<Double> vals) {
+        if (vals.isEmpty()) return;
+        try (PrintWriter pw = new PrintWriter(new FileWriter("scaling_results_ci.csv", true))) {
+            if (!csvHeaderWritten) {
+                pw.println("Nodes,Algorithm,Mean,StdDev,CI95,CI_Low,CI_High,N");
+                csvHeaderWritten = true;
+            }
+            double avg = mean(vals);
+            double sd  = stdev(vals);
+            double ci  = confidenceInterval95(vals);
+            pw.printf("%d,%s,%.4f,%.4f,%.4f,%.4f,%.4f,%d%n",
+                      numNodes, algorithm, avg, sd, ci, avg - ci, avg + ci, vals.size());
+        } catch (IOException e) {
+            System.err.println("  Could not write CSV: " + e.getMessage());
         }
     }
 

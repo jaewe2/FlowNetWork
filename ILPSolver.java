@@ -626,7 +626,8 @@ public class ILPSolver {
                                               int maxStorageCapacity,
                                               int nodeEnergyLevel,
                                               int minPriority,
-                                              int maxPriority) {
+                                              int maxPriority,
+                                              int numTrials) {
         runConfiguredProfessorTest(
             algorithmInput,
             "CUSTOM PROFESSOR-STYLE MWF-S COMPARISON",
@@ -638,7 +639,8 @@ public class ILPSolver {
             nodeEnergyLevel,
             minPriority, maxPriority,
             "mwf_s_custom_ilp.lp",
-            "custom_solution.txt");
+            "custom_solution.txt",
+            numTrials);
     }
 
     private static void runConfiguredProfessorTest(String algorithmInput,
@@ -659,6 +661,30 @@ public class ILPSolver {
                                                    int maxPri,
                                                    String lpFile,
                                                    String solFile) {
+        runConfiguredProfessorTest(algorithmInput, title, N, WIDTH, HEIGHT, TR,
+            nDG, nST, packetsEachDG, minSz, maxSz, minCap, maxCap,
+            energyLevel, minPri, maxPri, lpFile, solFile, 20);
+    }
+
+    private static void runConfiguredProfessorTest(String algorithmInput,
+                                                   String title,
+                                                   int N,
+                                                   int WIDTH,
+                                                   int HEIGHT,
+                                                   double TR,
+                                                   int nDG,
+                                                   int nST,
+                                                   int packetsEachDG,
+                                                   int minSz,
+                                                   int maxSz,
+                                                   int minCap,
+                                                   int maxCap,
+                                                   int energyLevel,
+                                                   int minPri,
+                                                   int maxPri,
+                                                   String lpFile,
+                                                   String solFile,
+                                                   int numTrials) {
         Set<String> selectedAlgorithms = parseProfessorAlgorithms(algorithmInput);
         Random rng = new Random();
         int nTR = N - nDG - nST;
@@ -676,70 +702,6 @@ public class ILPSolver {
             return;
         }
 
-        double[][] nodeLoc;
-        int[][] adjMatrix;
-        int reachable;
-        int attempts = 0;
-
-        // Regenerate positions until the random geometric graph is connected.
-        do {
-            attempts++;
-            nodeLoc = new double[N][2];
-            for (int i = 0; i < N; i++) {
-                nodeLoc[i][0] = rng.nextDouble() * WIDTH;
-                nodeLoc[i][1] = rng.nextDouble() * HEIGHT;
-            }
-
-            adjMatrix = new int[N][N];
-            for (int u = 0; u < N; u++) {
-                for (int v = u + 1; v < N; v++) {
-                    double dist = Math.sqrt(
-                        Math.pow(nodeLoc[u][0] - nodeLoc[v][0], 2) +
-                        Math.pow(nodeLoc[u][1] - nodeLoc[v][1], 2));
-                    if (dist <= TR) {
-                        adjMatrix[u][v] = 1;
-                        adjMatrix[v][u] = 1;
-                    }
-                }
-            }
-            reachable = countReachable(adjMatrix, 0);
-        } while (reachable < N && attempts < 1000);
-
-        if (reachable < N) {
-            System.out.printf("Could not generate a connected %d-node graph after 1000 attempts. Try increasing TR or shrinking the area.%n", N);
-            return;
-        }
-
-        // Assign roles: first nDG = DG, next nST = storage, remaining = transshipment.
-        List<Integer> dgNodes = new ArrayList<>();
-        List<Integer> storageNodes = new ArrayList<>();
-        for (int i = 0; i < nDG; i++) dgNodes.add(i);
-        for (int i = nDG; i < nDG + nST; i++) storageNodes.add(i);
-
-        int[] packetSize = new int[N];
-        int[] packetPriority = new int[N];
-        int[] nodeEnergy = new int[N];
-        int[] packetsPerNode = new int[N];
-        int[] storageCapacity = new int[nST];
-
-        Arrays.fill(nodeEnergy, energyLevel);
-
-        for (int dg : dgNodes) {
-            packetsPerNode[dg] = packetsEachDG;
-            packetSize[dg] = minSz + rng.nextInt(maxSz - minSz + 1);
-            packetPriority[dg] = minPri + rng.nextInt(maxPri - minPri + 1);
-        }
-        for (int j = 0; j < nST; j++) {
-            storageCapacity[j] = minCap + rng.nextInt(maxCap - minCap + 1);
-        }
-
-        int totalPackets = 0, totalStorageNeed = 0, totalStorageCap = 0;
-        for (int dg : dgNodes) {
-            totalPackets += packetsPerNode[dg];
-            totalStorageNeed += packetsPerNode[dg] * packetSize[dg];
-        }
-        for (int c : storageCapacity) totalStorageCap += c;
-
         printBar('=');
         System.out.println(title);
         printBar('=');
@@ -749,132 +711,246 @@ public class ILPSolver {
         System.out.printf("  %-24s %.1f%n", "Transmission range", TR);
         System.out.printf("  %-24s %d  (%d DG, %d storage, %d transshipment)%n",
                           "Total nodes", N, nDG, nST, nTR);
-        System.out.printf("  %-24s YES  (%d/%d reachable, attempts=%d)%n",
-                          "Connected", reachable, N, attempts);
         System.out.printf("  %-24s %s%n", "Energy model", "uniform: 1 energy per packet per node");
         System.out.printf("  %-24s %d%n", "Energy per node", energyLevel);
         System.out.printf("  %-24s %d%n", "Packets per DG", packetsEachDG);
+        System.out.printf("  %-24s %d%n", "Number of trials", numTrials);
 
-        System.out.println("\n[2] Capacity Summary");
-        System.out.printf("  %-24s %d%n", "Total DG packets", totalPackets);
-        System.out.printf("  %-24s %d%n", "Total storage demand", totalStorageNeed);
-        System.out.printf("  %-24s %d%n", "Total storage capacity", totalStorageCap);
-        System.out.printf("  %-24s %.1f%%%n", "Capacity / demand",
-                          totalStorageNeed == 0 ? 0.0 : 100.0 * totalStorageCap / totalStorageNeed);
-
-        System.out.println("\n[3] Random Ranges Used");
+        System.out.println("\n[2] Random Ranges Used");
         System.out.printf("  %-24s [%d, %d]%n", "Packet size", minSz, maxSz);
         System.out.printf("  %-24s [%d, %d]%n", "Storage capacity", minCap, maxCap);
         System.out.printf("  %-24s [%d, %d]%n", "DG priority", minPri, maxPri);
 
-        System.out.println("\n[4] DG Setup");
-        System.out.printf("  %-6s %10s %8s %10s %10s%n",
-                          "DG", "Packets", "Size", "Priority", "v/size");
-        System.out.println("  ------------------------------------------------");
-        for (int dg : dgNodes) {
-            System.out.printf("  %-6s %10d %8d %10d %10.2f%n",
-                              "DG " + dg, packetsPerNode[dg], packetSize[dg],
-                              packetPriority[dg],
-                              (double) packetPriority[dg] / packetSize[dg]);
-        }
+        // ── Trial loop with CI collection ──────────────────────────────────
+        List<Double> alg1Results      = new ArrayList<>();
+        List<Double> alg2Results      = new ArrayList<>();
+        List<Double> ilpWeightResults = new ArrayList<>();
+        List<Double> ilpFlowResults   = new ArrayList<>();
 
-        System.out.println("\n[5] Storage Setup");
-        System.out.printf("  %-10s %12s %10s%n", "Storage", "Capacity", "Energy");
-        System.out.println("  ------------------------------------");
-        for (int j = 0; j < nST; j++) {
-            int st = storageNodes.get(j);
-            System.out.printf("  %-10s %12d %10d%n",
-                              "Node " + st, storageCapacity[j], nodeEnergy[st]);
-        }
-        System.out.printf("\n[6] Transshipment Nodes%n");
-        if (nTR > 0) {
-            System.out.printf("  Nodes %d-%d: no data, no storage, energy=%d each%n",
-                              nDG + nST, N - 1, energyLevel);
-        } else {
-            System.out.println("  None");
-        }
+        System.out.printf("%n[3] Per-Trial Results (%d trials)%n", numTrials);
+        printBar('-');
+        System.out.printf("%-8s", "Trial");
+        if (selectedAlgorithms.contains("ALG1")) System.out.printf("%14s", "Alg1");
+        if (selectedAlgorithms.contains("ALG2")) System.out.printf("%14s", "Alg2");
+        if (selectedAlgorithms.contains("ILP"))  System.out.printf("%14s %14s", "ILP_weight", "ILP_flow");
+        System.out.println();
+        printBar('-');
 
-        ProfessorResult alg1 = null;
-        ProfessorResult alg2 = null;
-        ProfessorResult ilpWeight = null;
-        ProfessorResult ilpFlow = null;
+        for (int trial = 1; trial <= numTrials; trial++) {
 
-        if (selectedAlgorithms.contains("ALG1")) {
-            alg1 = runAlgorithm1(
-                new FlowNetwork(packetSize, packetPriority, nodeEnergy, packetsPerNode, nodeLoc),
-                dgNodes, storageNodes, storageCapacity, adjMatrix);
-        }
-
-        if (selectedAlgorithms.contains("ALG2")) {
-            alg2 = runAlgorithm2(
-                new FlowNetwork(packetSize, packetPriority, nodeEnergy, packetsPerNode, nodeLoc),
-                new FlowNetwork(packetSize, packetPriority, nodeEnergy, packetsPerNode, nodeLoc),
-                dgNodes, storageNodes, storageCapacity, adjMatrix);
-        }
-
-        if (selectedAlgorithms.contains("ILP")) {
-            // Derive file names for both ILPs
-            String lpFileWeight = lpFile.replace(".lp", "_weight.lp");
-            String solFileWeight = solFile.replace(".txt", "_weight.txt");
-            String lpFileFlow = lpFile.replace(".lp", "_flow.lp");
-            String solFileFlow = solFile.replace(".txt", "_flow.txt");
-
-            ilpWeight = runILPBaseline(
-                packetSize, packetPriority, nodeEnergy, packetsPerNode, nodeLoc,
-                dgNodes, storageNodes, storageCapacity, adjMatrix,
-                lpFileWeight, solFileWeight, true);
-
-            ilpFlow = runILPBaseline(
-                packetSize, packetPriority, nodeEnergy, packetsPerNode, nodeLoc,
-                dgNodes, storageNodes, storageCapacity, adjMatrix,
-                lpFileFlow, solFileFlow, false);
-
-            // For ILP_max_flow, GLPK objective = packet count, not priority.
-            // Compute the priority those packets achieved from the solution file.
-            if (ilpFlow != null && ilpFlow.name.equals("ILP_max_flow")) {
-                double flowPriority = computePriorityFromSolution(
-                    solFileFlow, dgNodes, packetPriority, nodeLoc.length);
-                if (flowPriority >= 0) {
-                    ilpFlow.priority = flowPriority;
-                    ilpFlow.note += "; priority computed from source flows";
-                }
+            // Delay between trials to avoid resource contention
+            if (trial > 1) {
+                try { Thread.sleep(5000); } catch (InterruptedException ignored) {}
             }
+
+            // ── Generate a fresh random network for this trial ─────────
+            double[][] nodeLoc;
+            int[][] adjMatrix;
+            int reachable;
+            int attempts = 0;
+
+            do {
+                attempts++;
+                nodeLoc = new double[N][2];
+                for (int i = 0; i < N; i++) {
+                    nodeLoc[i][0] = rng.nextDouble() * WIDTH;
+                    nodeLoc[i][1] = rng.nextDouble() * HEIGHT;
+                }
+
+                adjMatrix = new int[N][N];
+                for (int u = 0; u < N; u++) {
+                    for (int v = u + 1; v < N; v++) {
+                        double dist = Math.sqrt(
+                            Math.pow(nodeLoc[u][0] - nodeLoc[v][0], 2) +
+                            Math.pow(nodeLoc[u][1] - nodeLoc[v][1], 2));
+                        if (dist <= TR) {
+                            adjMatrix[u][v] = 1;
+                            adjMatrix[v][u] = 1;
+                        }
+                    }
+                }
+                reachable = countReachable(adjMatrix, 0);
+            } while (reachable < N && attempts < 1000);
+
+            if (reachable < N) {
+                System.out.printf("  Trial %2d: Could not generate connected graph — skipped%n", trial);
+                continue;
+            }
+
+            // Assign roles: first nDG = DG, next nST = storage, rest = transshipment
+            List<Integer> dgNodes = new ArrayList<>();
+            List<Integer> storageNodes = new ArrayList<>();
+            for (int i = 0; i < nDG; i++) dgNodes.add(i);
+            for (int i = nDG; i < nDG + nST; i++) storageNodes.add(i);
+
+            int[] packetSize = new int[N];
+            int[] packetPriority = new int[N];
+            int[] nodeEnergy = new int[N];
+            int[] packetsPerNode = new int[N];
+            int[] storageCapacity = new int[nST];
+
+            Arrays.fill(nodeEnergy, energyLevel);
+
+            for (int dg : dgNodes) {
+                packetsPerNode[dg] = packetsEachDG;
+                packetSize[dg] = minSz + rng.nextInt(maxSz - minSz + 1);
+                packetPriority[dg] = minPri + rng.nextInt(maxPri - minPri + 1);
+            }
+            for (int j = 0; j < nST; j++) {
+                storageCapacity[j] = minCap + rng.nextInt(maxCap - minCap + 1);
+            }
+
+            // ── Run algorithms on this trial's network ─────────────────
+            ProfessorResult alg1 = null;
+            ProfessorResult alg2 = null;
+            ProfessorResult ilpWeight = null;
+            ProfessorResult ilpFlow = null;
+
+            if (selectedAlgorithms.contains("ALG1")) {
+                alg1 = runAlgorithm1(
+                    new FlowNetwork(packetSize, packetPriority, nodeEnergy, packetsPerNode, nodeLoc),
+                    dgNodes, storageNodes, storageCapacity, adjMatrix);
+                alg1Results.add(alg1.priority);
+            }
+
+            if (selectedAlgorithms.contains("ALG2")) {
+                alg2 = runAlgorithm2(
+                    new FlowNetwork(packetSize, packetPriority, nodeEnergy, packetsPerNode, nodeLoc),
+                    new FlowNetwork(packetSize, packetPriority, nodeEnergy, packetsPerNode, nodeLoc),
+                    dgNodes, storageNodes, storageCapacity, adjMatrix);
+                alg2Results.add(alg2.priority);
+            }
+
+            if (selectedAlgorithms.contains("ILP")) {
+                String lpFileWeight = lpFile.replace(".lp", "_weight.lp");
+                String solFileWeight = solFile.replace(".txt", "_weight.txt");
+                String lpFileFlow = lpFile.replace(".lp", "_flow.lp");
+                String solFileFlow = solFile.replace(".txt", "_flow.txt");
+
+                ilpWeight = runILPBaseline(
+                    packetSize, packetPriority, nodeEnergy, packetsPerNode, nodeLoc,
+                    dgNodes, storageNodes, storageCapacity, adjMatrix,
+                    lpFileWeight, solFileWeight, true);
+
+                ilpFlow = runILPBaseline(
+                    packetSize, packetPriority, nodeEnergy, packetsPerNode, nodeLoc,
+                    dgNodes, storageNodes, storageCapacity, adjMatrix,
+                    lpFileFlow, solFileFlow, false);
+
+                if (ilpFlow != null && ilpFlow.name.equals("ILP_max_flow")) {
+                    double flowPriority = computePriorityFromSolution(
+                        solFileFlow, dgNodes, packetPriority, nodeLoc.length);
+                    if (flowPriority >= 0) {
+                        ilpFlow.priority = flowPriority;
+                    }
+                }
+
+                ilpWeightResults.add(ilpWeight != null ? ilpWeight.priority : 0.0);
+                ilpFlowResults.add(ilpFlow != null ? ilpFlow.priority : 0.0);
+            }
+
+            // Print per-trial row
+            System.out.printf("%-8s", "  " + trial);
+            if (alg1 != null) System.out.printf("%14.1f", alg1.priority);
+            if (alg2 != null) System.out.printf("%14.1f", alg2.priority);
+            if (ilpWeight != null) System.out.printf("%14.1f", ilpWeight.priority);
+            if (ilpFlow != null) System.out.printf("%14.1f", ilpFlow.priority);
+            System.out.println();
         }
 
-        double exactPriority = (ilpWeight != null && ilpWeight.name.equals("ILP_max_weight"))
-                               ? ilpWeight.priority : -1.0;
-
-        System.out.println("\n[7] Results");
+        // ── Confidence Interval Summary ────────────────────────────────────
+        printBar('=');
+        System.out.printf("%n[4] Confidence Interval Summary (95%% CI, %d trials)%n", numTrials);
         printBar('-');
-        System.out.printf("%-18s %12s %10s %13s %10s %12s  %s%n",
-                          "Algorithm", "Priority", "Packets", "Storage",
-                          "Time(ms)", "Gap vs ILP", "Meaning");
-        printBar('-');
-        if (alg1 != null)      printProfessorRow(alg1, exactPriority);
-        if (alg2 != null)      printProfessorRow(alg2, exactPriority);
-        if (ilpWeight != null)  printProfessorRow(ilpWeight, exactPriority);
-        if (ilpFlow != null)    printProfessorRow(ilpFlow, exactPriority);
+        System.out.printf("%-18s %12s %12s %12s %12s %8s%n",
+                          "Algorithm", "Mean", "StdDev", "CI (±)", "CI Range", "N");
         printBar('-');
 
-        System.out.println("\n[8] How to Read This");
-        System.out.println("  Algorithm 1 is the paper's max-flow baseline: it sorts by packet size c_i ascending to maximize packet count, then reports the priority achieved.");
-        System.out.printf("  Algorithm 2 is all-or-nothing: if a DG cannot send all %d packets, that ordering stops.%n", packetsEachDG);
-        System.out.println("  ILP_max_weight uses objective (7): max Σ v_i × f_i — maximizes total preserved priority.");
-        System.out.println("  ILP_max_flow uses objective (1): max Σ f_i — maximizes total preserved packets. Algorithm 1 should match or be close to this.");
-        System.out.println("  Both ILPs use the same constraints (2)-(6). Uniform energy model: packet size affects storage only.");
+        if (!alg1Results.isEmpty())
+            printCIRow("Algorithm 1",  alg1Results);
+        if (!alg2Results.isEmpty())
+            printCIRow("Algorithm 2",  alg2Results);
+        if (!ilpWeightResults.isEmpty())
+            printCIRow("ILP_max_weight", ilpWeightResults);
+        if (!ilpFlowResults.isEmpty())
+            printCIRow("ILP_max_flow", ilpFlowResults);
+        printBar('-');
 
-        System.out.println("\n[9] Files");
-        if (ilpWeight != null) {
+        System.out.println("\n[5] How to Read This");
+        System.out.println("  Each trial generates a fresh random network with the same parameters.");
+        System.out.println("  Mean = average priority across all trials.");
+        System.out.println("  CI (±) = 1.96 × StdDev / √N  (the 95% confidence interval half-width).");
+        System.out.println("  Plot each data point as Mean, with error bars extending ± CI.");
+        System.out.println("  Algorithm 1 is the paper's max-flow baseline (size order).");
+        System.out.printf("  Algorithm 2 is all-or-nothing (best of priority/density order).%n");
+        System.out.println("  ILP_max_weight maximizes total priority. ILP_max_flow maximizes packet count.");
+
+        // ── Write CSV for plotting ─────────────────────────────────────────
+        String csvFile = lpFile.replace(".lp", "_ci_results.csv");
+        try (PrintWriter pw = new PrintWriter(new FileWriter(csvFile))) {
+            pw.println("Algorithm,Mean,StdDev,CI95,CI_Low,CI_High,N");
+            if (!alg1Results.isEmpty())      writeCSVRow(pw, "Algorithm_1",  alg1Results);
+            if (!alg2Results.isEmpty())      writeCSVRow(pw, "Algorithm_2",  alg2Results);
+            if (!ilpWeightResults.isEmpty()) writeCSVRow(pw, "ILP_max_weight", ilpWeightResults);
+            if (!ilpFlowResults.isEmpty())   writeCSVRow(pw, "ILP_max_flow", ilpFlowResults);
+            System.out.println("\n[6] CSV Output");
+            System.out.println("  CI data written to: " + csvFile);
+            System.out.println("  Use this file to create plots with error bars in Excel or Python.");
+        } catch (IOException e) {
+            System.err.println("  Could not write CSV: " + e.getMessage());
+        }
+
+        System.out.println("\n[7] Files");
+        if (!ilpWeightResults.isEmpty()) {
             String lpw = lpFile.replace(".lp", "_weight.lp");
             String slw = solFile.replace(".txt", "_weight.txt");
-            System.out.println("  ILP_max_weight LP: " + lpw + "  |  Solution: " + slw);
+            System.out.println("  ILP_max_weight LP: " + lpw + "  |  Solution: " + slw + " (last trial)");
         }
-        if (ilpFlow != null) {
+        if (!ilpFlowResults.isEmpty()) {
             String lpf = lpFile.replace(".lp", "_flow.lp");
             String slf = solFile.replace(".txt", "_flow.txt");
-            System.out.println("  ILP_max_flow LP:   " + lpf + "  |  Solution: " + slf);
+            System.out.println("  ILP_max_flow LP:   " + lpf + "  |  Solution: " + slf + " (last trial)");
         }
         System.out.println("  Verify: glpsol --lp <file>.lp -o <file>.txt");
+    }
+
+    // ── CI helpers for professor test ────────────────────────────────────────
+
+    private static double profMean(List<Double> vals) {
+        double sum = 0;
+        for (double v : vals) sum += v;
+        return vals.isEmpty() ? 0 : sum / vals.size();
+    }
+
+    private static double profStdev(List<Double> vals) {
+        if (vals.size() < 2) return 0;
+        double avg = profMean(vals);
+        double sumSq = 0;
+        for (double v : vals) sumSq += (v - avg) * (v - avg);
+        return Math.sqrt(sumSq / (vals.size() - 1));
+    }
+
+    private static double profCI95(List<Double> vals) {
+        if (vals.size() < 2) return 0;
+        return 1.96 * profStdev(vals) / Math.sqrt(vals.size());
+    }
+
+    private static void printCIRow(String name, List<Double> vals) {
+        double avg = profMean(vals);
+        double sd  = profStdev(vals);
+        double ci  = profCI95(vals);
+        System.out.printf("%-18s %12.2f %12.2f %12.2f %s %8d%n",
+                          name, avg, sd, ci,
+                          String.format("[%8.2f, %8.2f]", avg - ci, avg + ci),
+                          vals.size());
+    }
+
+    private static void writeCSVRow(PrintWriter pw, String name, List<Double> vals) {
+        double avg = profMean(vals);
+        double sd  = profStdev(vals);
+        double ci  = profCI95(vals);
+        pw.printf("%s,%.4f,%.4f,%.4f,%.4f,%.4f,%d%n",
+                  name, avg, sd, ci, avg - ci, avg + ci, vals.size());
     }
 
     private static ProfessorResult runILPBaseline(int[] packetSize,
