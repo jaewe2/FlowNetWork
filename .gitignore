@@ -1,14 +1,18 @@
 # Ignore everything
 *
 
-# But keep folders searchable
+# Keep folders
 !*/
 
 # Keep Java files
 !*.java
 
-# Keep the .gitignore file itself
+# Keep README
+!README.md
+!README.txt
+
+# Keep gitignore
 !.gitignore
 
-# Ignore macOS system files
+# Ignore macOS files
 .DS_Store
