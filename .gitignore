@@ -4,7 +4,7 @@
 # Keep folders
 !*/
 
-# Keep Java files
+# Keep Java source files
 !*.java
 
 # Keep README
@@ -13,5 +13,5 @@
 # Keep gitignore
 !.gitignore
 
-# Ignore macOS files
+# Ignore macOS system files
 .DS_Store
